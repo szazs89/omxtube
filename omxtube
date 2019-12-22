@@ -7,6 +7,7 @@ tmpfile=$(tempfile --prefix=OMXt_)
 omxplayer=omxplayer
 #omxopts="-r -o hdmi"
 cookiefile="/tmp/cookies-$( date +%s.%N ).txt";
+omxurls="$HOME/.omxtube.urls"
 while [ $# -gt 0 ]; do
     case $1 in
 	-mplayer)
@@ -16,15 +17,28 @@ while [ $# -gt 0 ]; do
 	-vlc)
 	    omxplayer=nvlc
 	    omxopts="--no-video --one-instance --playlist-enqueue"
-	    xterm -e nvlc $omxopts &
+	    xterm -e screen nvlc $omxopts &
+	    sleep 2
+	    ;;
+	-aud)
+	    omxplayer=audacious
+	    omxopts="--enqueue"
+	    audacious &
+	    sleep 2
 	    ;;
 	-url)
 	    shift
-	    case "$1" in
-		(https:*) url="$1"
-		    ;;
-		*)	url="https://youtube.com/watch?v=$1"
-	    esac
+	    if [ -z "$1" ]; then
+		[ -f $omxurls ] && cat $omxurls
+		echo -n "URL: "
+		read url
+	    else
+		url="$1"
+	    fi
+	    sedex=`echo "$url" |sed -r 's:.*(v=[^\& ]+).*:/\1/d:'` && echo "$sedex"
+	    [ -f $omxurls ] && sed -ri "$sedex" $omxurls
+	    echo "$url" >>$omxurls
+	    url=${url/ #*/}
     esac
     shift
 done
@@ -41,15 +55,16 @@ case $url in
 	;;
 esac
 [ -n "$DISPLAY" ] && xset -dpms
+#sel_url="grep mime.audio"
+sel_url="grep audio"
 if $($pl); then
 i=0
 st=0
 echo "$url"
 while [ $i -lt 1 -o -n "$dlurl" -o $st -gt 0 ]; do
   i=$[i+1]
-#  dlurl=$(youtube-dl --playlist-start=$i --playlist-end=$i -f "best[height<=?480]/best" -g "$url")
-  dlurl=$(youtube-dl --playlist-start=$i --playlist-end=$i -f 18 -g "$url" )
-#  dlurl=$(ssh ghost@pgw "youtube-dl --playlist-start=$i --playlist-end=$i -g '$url' |grep mime=video")
+#  dlurl=$(youtube-dl --playlist-start=$i --playlist-end=$i --max-quality 35 -g "$url")
+  dlurl=$(youtube-dl --playlist-start=$i --playlist-end=$i -f 18 -g "$url" |$sel_url |head -1)
   st=$?
   if [ -n "$dlurl" ]; then
     echo "$i: $dlurl" && $omxplayer $omxopts "$dlurl"
@@ -57,9 +72,7 @@ while [ $i -lt 1 -o -n "$dlurl" -o $st -gt 0 ]; do
   fi
 done
 else
-#  dlurl=$(youtube-dl --cookies $cookiefile -g "$url" |grep mime=audio)
-  dlurl=$(youtube-dl --cookies $cookiefile -f 18 -g "$url" )
-#  dlurl=$(ssh ghost@pgw "youtube-dl -g -f best '$url'")
+  dlurl=$(youtube-dl --cookies $cookiefile -f 18 -g "$url" |$sel_url |head -1)
   echo "$dlurl"
   $omxplayer $omxopts "$dlurl"
   [ -n "$DISPLAY" ] && xrefresh -display :0
