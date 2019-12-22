@@ -1,0 +1,70 @@
+#!/bin/bash
+#Script to play YouTube using OMXPlayer
+echo "Loading YouTube Videos..."
+history=/tmp/OMXhist
+cp ~/.config/chromium/Default/History $history
+tmpfile=$(tempfile --prefix=OMXt_)
+omxplayer=omxplayer
+#omxopts="-r -o hdmi"
+cookiefile="/tmp/cookies-$( date +%s.%N ).txt";
+while [ $# -gt 0 ]; do
+    case $1 in
+	-mplayer)
+	    omxplayer=mplayer
+	    omxopts="-ao alsa -vo novideo -cookies -cookies-file $cookiefile"
+	    ;;
+	-vlc)
+	    omxplayer=nvlc
+	    omxopts="--no-video --one-instance --playlist-enqueue"
+	    xterm -e nvlc $omxopts &
+	    ;;
+	-url)
+	    shift
+	    case "$1" in
+		(https:*) url="$1"
+		    ;;
+		*)	url="https://youtube.com/watch?v=$1"
+	    esac
+    esac
+    shift
+done
+echo "omxplayer: $omxplayer"
+echo "omxopts: '$omxopts'"
+
+#url=$(sqlite3 $history 'SELECT url FROM urls ORDER BY last_visit_time DESC LIMIT 1')
+[ -z "$url" ] && \
+url=$(sqlite3 $history 'SELECT url FROM urls ORDER BY last_visit_time' |grep '^http[s]*://www.youtube.com/' |tail -1)
+case $url in
+  *[\&\?]list=*) pl=true
+	;;
+  *) pl=false
+	;;
+esac
+[ -n "$DISPLAY" ] && xset -dpms
+if $($pl); then
+i=0
+st=0
+echo "$url"
+while [ $i -lt 1 -o -n "$dlurl" -o $st -gt 0 ]; do
+  i=$[i+1]
+#  dlurl=$(youtube-dl --playlist-start=$i --playlist-end=$i -f "best[height<=?480]/best" -g "$url")
+  dlurl=$(youtube-dl --playlist-start=$i --playlist-end=$i -f 18 -g "$url" )
+#  dlurl=$(ssh ghost@pgw "youtube-dl --playlist-start=$i --playlist-end=$i -g '$url' |grep mime=video")
+  st=$?
+  if [ -n "$dlurl" ]; then
+    echo "$i: $dlurl" && $omxplayer $omxopts "$dlurl"
+    [ -n "$DISPLAY" ] && xrefresh -display :0
+  fi
+done
+else
+#  dlurl=$(youtube-dl --cookies $cookiefile -g "$url" |grep mime=audio)
+  dlurl=$(youtube-dl --cookies $cookiefile -f 18 -g "$url" )
+#  dlurl=$(ssh ghost@pgw "youtube-dl -g -f best '$url'")
+  echo "$dlurl"
+  $omxplayer $omxopts "$dlurl"
+  [ -n "$DISPLAY" ] && xrefresh -display :0
+fi
+rm $history $tmpfile $cookiefile
+[ -n "$DISPLAY" ] && xset +dpms
+echo -n "Press ENTER!"
+read
