@@ -1,83 +1,103 @@
 #!/bin/bash
 #Script to play YouTube using OMXPlayer
 echo "Loading YouTube Videos..."
-history=/tmp/OMXhist
-cp ~/.config/chromium/Default/History $history
-tmpfile=$(tempfile --prefix=OMXt_)
-omxplayer=omxplayer
+
+TMPFIL=$(tempfile --prefix=OMXt_)
+
+# omxtuberc file: OMXPLAYER, _MPLAYER, _VLC, _AUDACIOUS, OPTS, YTUBE_DL, YT_FORMAT
+[ -f $HOME/.omxtuberc ] && . $HOME/.omxtuberc
+PLAYER=${OMXPLAYER:=/usr/bin/omxplayer}
 #omxopts="-r -o hdmi"
-cookiefile="/tmp/cookies-$( date +%s.%N ).txt";
+
+[ -n "$COOKIES" ] && COOKIES="/tmp/cookies-$( date +%s.%N ).txt";
 omxurls="$HOME/.omxtube.urls"
 while [ $# -gt 0 ]; do
     case $1 in
 	-mplayer)
-	    omxplayer=mplayer
-	    omxopts="-ao alsa -vo novideo -cookies -cookies-file $cookiefile"
+	    PLAYER=${_MPLAYER:=/usr/bin/mplayer}
+	    [ -z "$OPTS" ] && OPTS="-ao alsa -vo novideo -cookies -cookies-file $COOKIES"
 	    ;;
 	-vlc)
-	    omxplayer=nvlc
-	    omxopts="--no-video --one-instance --playlist-enqueue"
-	    xterm -e screen nvlc $omxopts &
+	    PLAYER=${_VLC:=/usr/bin/nvlc}
+	    [ -z "$OPTS" ] && OPTS="--no-video --one-instance --playlist-enqueue"
+	    xterm -e screen $PLAYER $OPTS &
 	    sleep 2
 	    ;;
 	-aud)
-	    omxplayer=audacious
-	    omxopts="--enqueue"
-	    audacious &
+	    PLAYER=${_AUDACIOUS:=/usr/bin/audacious}
+	    [ -z "$OPTS" ] && OPTS="--enqueue"
+	    $PLAYER &
 	    sleep 2
 	    ;;
 	-url)
 	    shift
 	    if [ -z "$1" ]; then
-		[ -f $omxurls ] && cat $omxurls
+		[ -f $omxurls ] && grep -n ^https $omxurls
 		echo -n "URL: "
-		read url
+		read URL
+		# if the line number was given:
+		[ -z "${URL##[1-9]*}" ] && URL=`grep -n ^https $omxurls |grep "^$URL:" |sed -r 's/[^:]+://'`
 	    else
-		url="$1"
+		URL="$1"
 	    fi
-	    sedex=`echo "$url" |sed -r 's:.*(v=[^\& ]+).*:/\1/d:'` && echo "$sedex"
-	    [ -f $omxurls ] && sed -ri "$sedex" $omxurls
-	    echo "$url" >>$omxurls
-	    url=${url/ #*/}
+	    # if only the hash of the video was given:
+	    [ -n "${URL##https:*}" ] && URL="https://youtube.com/watch?v=$1"
+	    # the sed expression to remove the chosen URL from omxurls...
+	    SEDEX=`echo "$URL" |sed -r 's:.*\?(list|v)(=[^\& ]+).*:/\2/d:'` && echo "$SEDEX"
+	    [ -f $omxurls ] && sed -ri "$SEDEX" $omxurls
+	    # ... and append it to the end:
+	    echo "$URL" >>$omxurls
+	    # remove the comment part from the URL that was read:
+	    URL=${URL/ #*/}
     esac
     shift
 done
-echo "omxplayer: $omxplayer"
-echo "omxopts: '$omxopts'"
+echo "player: $PLAYER"
+echo "omxopts: '$OPTS'"
+echo "youtube-dl: ${YTUBE_DL:=youtube-dl}"
+echo "yt-format: ${YT_FORMAT:=18}"
 
-#url=$(sqlite3 $history 'SELECT url FROM urls ORDER BY last_visit_time DESC LIMIT 1')
-[ -z "$url" ] && \
-url=$(sqlite3 $history 'SELECT url FROM urls ORDER BY last_visit_time' |grep '^http[s]*://www.youtube.com/' |tail -1)
-case $url in
-  *[\&\?]list=*) pl=true
+# if URL is not given guessing it from last page visited in Chromium:
+if [ -z "$URL" ]; then
+    #history=/tmp/OMXhist
+    #cp ~/.config/chromium/Default/History $history
+    #url=$(sqlite3 $history 'SELECT url FROM urls ORDER BY last_visit_time DESC LIMIT 1')
+    SQL_CMD="SELECT url FROM urls ORDER BY last_visit_time"
+    URL=$(sqlite3 ~/.config/chromium/Default/History $SQL_CMD |grep '^http[s]*://www.youtube.com/' |tail -1)
+    #rm $history
+fi
+
+case $URL in
+  *[\&\?]list=*) PLIST=true
 	;;
-  *) pl=false
+  *) PLIST=false
 	;;
 esac
+
 [ -n "$DISPLAY" ] && xset -dpms
-#sel_url="grep mime.audio"
-sel_url="grep audio"
-if $($pl); then
+if $($PLIST); then
 i=0
 st=0
-echo "$url"
-while [ $i -lt 1 -o -n "$dlurl" -o $st -gt 0 ]; do
+echo "$URL"
+while [ $i -lt 1 -o -n "$DL_URL" -o $st -gt 0 ]; do
   i=$[i+1]
-#  dlurl=$(youtube-dl --playlist-start=$i --playlist-end=$i --max-quality 35 -g "$url")
-  dlurl=$(youtube-dl --playlist-start=$i --playlist-end=$i -f 18 -g "$url" |$sel_url |head -1)
+#  dlurl=$(youtube-dl --playlist-start=$i --playlist-end=$i -f "best[height<=?480]/best" -g "$url")
+  DL_URL=$($YTUBE_DL --playlist-start=$i --playlist-end=$i -f $YT_FORMAT -g "$URL" )
   st=$?
-  if [ -n "$dlurl" ]; then
-    echo "$i: $dlurl" && $omxplayer $omxopts "$dlurl"
+  if [ -n "$DL_URL" ]; then
+    echo "$i: $DL_URL" && $PLAYER $OPTS "$DL_URL"
     [ -n "$DISPLAY" ] && xrefresh -display :0
   fi
 done
-else
-  dlurl=$(youtube-dl --cookies $cookiefile -f 18 -g "$url" |$sel_url |head -1)
-  echo "$dlurl"
-  $omxplayer $omxopts "$dlurl"
+else # not playlist
+#  dlurl=$(youtube-dl --cookies $cookiefile -g "$url" |grep mime=audio)
+  DL_URL=$($YTUBE_DL --cookies $COOKIES -f YT_FORMAT -g "$URL" )
+  echo "$DL_URL"
+  $PLAYER $OPTS "$DL_URL"
   [ -n "$DISPLAY" ] && xrefresh -display :0
 fi
-rm $history $tmpfile $cookiefile
+
+rm $TMPFIL $COOKIES
 [ -n "$DISPLAY" ] && xset +dpms
 echo -n "Press ENTER!"
 read
