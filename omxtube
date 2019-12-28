@@ -76,19 +76,32 @@ esac
 
 [ -n "$DISPLAY" ] && xset -dpms
 if $($PLIST); then
-i=0
-st=0
-echo "$URL"
-while [ $i -lt 1 -o -n "$DL_URL" -o $st -gt 0 ]; do
-  i=$[i+1]
-#  dlurl=$(youtube-dl --playlist-start=$i --playlist-end=$i -f "best[height<=?480]/best" -g "$url")
-  DL_URL=$($YTUBE_DL --playlist-start=$i --playlist-end=$i -f $YT_FORMAT -g "$URL" )
-  st=$?
-  if [ -n "$DL_URL" ]; then
-    echo "$i: $DL_URL" && $PLAYER $OPTS "$DL_URL"
+  i=0
+  st=0
+  echo "$URL"
+  while [ $i -lt 1 -o -n "$DL_URL" -o $st -gt 0 ]; do
+    i=$[i+1]
+#    dlurl=$(youtube-dl --playlist-start=$i --playlist-end=$i -f "best[height<=?480]/best" -g "$url")
+    DL_URL=$($YTUBE_DL --playlist-start=$i --playlist-end=$i -f $YT_FORMAT -g "$URL" )
+    st=$?
+    echo "$i:$DL_URL" >>$TMPFIL
+  done  & # converting the download urls separately
+  # waiting for the first track:
+  echo -n ".."
+  while ! [ -s $TMPFIL ]; do sleep 2; done
+  j=0
+  while true; do
+    j=$[j+1]
+    DL_URL=$( grep "^$j:" $TMPFIL |cut -f2- -d: )
+    # no more track (youtube-dl returned empty string)
+    [ -z "$DL_URL" ] && echo "!" && break
+    echo -n $j
+    $PLAYER $OPTS "$DL_URL"
     [ -n "$DISPLAY" ] && xrefresh -display :0
-  fi
-done
+    # waiting for the next track:
+    echo -n ".."
+    while ! [ `wc -l <$TMPFIL` -gt $j ]; do sleep 2; done
+  done
 else # not playlist
 #  dlurl=$(youtube-dl --cookies $cookiefile -g "$url" |grep mime=audio)
   DL_URL=$($YTUBE_DL --cookies $COOKIES -f YT_FORMAT -g "$URL" )
