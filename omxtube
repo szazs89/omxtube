@@ -11,6 +11,7 @@ PLAYER=${OMXPLAYER:=/usr/bin/omxplayer}
 
 [ -n "$COOKIES" ] && COOKIES="/tmp/cookies-$( date +%s.%N ).txt";
 omxurls="$HOME/.omxtube.urls"
+DL_OPTS="-g"
 while [ $# -gt 0 ]; do
     case $1 in
 	-mplayer)
@@ -28,6 +29,9 @@ while [ $# -gt 0 ]; do
 	    [ -z "$OPTS" ] && OPTS="--enqueue"
 	    $PLAYER &
 	    sleep 2
+	    ;;
+	-d)
+	    DL_OPTS=""
 	    ;;
 	-url)
 	    shift
@@ -96,18 +100,26 @@ if $($PLIST); then
     # no more track (youtube-dl returned empty string)
     [ -z "$DL_URL" ] && echo "!" && break
     echo -n $j
-    $PLAYER $OPTS "$DL_URL"
-    [ -n "$DISPLAY" ] && xrefresh -display :0
+    if [ -z "$DL_OPTS" ]; then
+	$YTUBE_DL --playlist-start=$j --playlist-end=$j -f $YT_FORMAT "$URL"
+    else
+	$PLAYER $OPTS "$DL_URL"
+	[ -n "$DISPLAY" ] && xrefresh -display :0
+    fi
     # waiting for the next track:
     echo -n ".."
     while ! [ `wc -l <$TMPFIL` -gt $j ]; do sleep 2; done
   done
 else # not playlist
+  if [ -z "$DL_OPTS" ]; then
+    $YTUBE_DL -f $YT_FORMAT "$URL"
 #  dlurl=$(youtube-dl --cookies $cookiefile -g "$url" |grep mime=audio)
-  DL_URL=$($YTUBE_DL --cookies $COOKIES -f YT_FORMAT -g "$URL" )
-  echo "$DL_URL"
-  $PLAYER $OPTS "$DL_URL"
-  [ -n "$DISPLAY" ] && xrefresh -display :0
+  else
+    DL_URL=$($YTUBE_DL --cookies $COOKIES -f $YT_FORMAT $DL_OPTS "$URL" )
+    echo "$DL_URL"
+    $PLAYER $OPTS "$DL_URL"
+    [ -n "$DISPLAY" ] && xrefresh -display :0
+  fi
 fi
 
 rm $TMPFIL $COOKIES
