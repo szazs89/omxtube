@@ -60,6 +60,7 @@ echo "player: $PLAYER"
 echo "omxopts: '$OPTS'"
 echo "youtube-dl: ${YTUBE_DL:=youtube-dl}"
 echo "yt-format: ${YT_FORMAT:=18}"
+echo "URL: $URL"
 
 # if URL is not given guessing it from last page visited in Chromium:
 if [ -z "$URL" ]; then
@@ -82,7 +83,6 @@ esac
 if $($PLIST); then
   i=0
   st=0
-  echo "$URL"
   while [ $i -lt 1 -o -n "$DL_URL" -o $st -gt 0 ]; do
     i=$[i+1]
 #    dlurl=$(youtube-dl --playlist-start=$i --playlist-end=$i -f "best[height<=?480]/best" -g "$url")
@@ -115,7 +115,7 @@ else # not playlist
     $YTUBE_DL -f $YT_FORMAT "$URL"
 #  dlurl=$(youtube-dl --cookies $cookiefile -g "$url" |grep mime=audio)
   else
-    DL_URL=$($YTUBE_DL --cookies $COOKIES -f $YT_FORMAT $DL_OPTS "$URL" )
+    DL_URL=$($YTUBE_DL -f $YT_FORMAT $DL_OPTS "$URL" )
     echo "$DL_URL"
     $PLAYER $OPTS "$DL_URL"
     [ -n "$DISPLAY" ] && xrefresh -display :0
